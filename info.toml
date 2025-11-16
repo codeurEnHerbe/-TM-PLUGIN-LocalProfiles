@@ -1,0 +1,10 @@
+[meta]
+name = "Local Profiles"
+author = "TonNom"
+category = "Local"
+version = "1.0.0"
+site_id = 0
+
+
+[script]
+dependencies=[ "VehicleState" , "Camera"]
