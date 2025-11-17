@@ -336,8 +336,6 @@ void Render() {
     if (UI::IsKeyPressed(UI::Key::B)) {
         if (profiles.Length > 0) {
             currentProfileIndex = (currentProfileIndex + 1) % profiles.Length;
-            ProfileManager pm;
-            pm.Save();
         }
     }
 
