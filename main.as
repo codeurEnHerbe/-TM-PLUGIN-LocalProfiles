@@ -291,7 +291,6 @@ void RenderProfilesTable(const string &in mapUid) {
         string label = (int(i) == currentProfileIndex ? "\\$8f8" : "") + profiles[i];
         if (UI::Selectable(label, int(i) == currentProfileIndex)) {
             currentProfileIndex = int(i);
-            pm.Save();
         }
         UI::TableNextColumn();
         uint best = pm.GetBestTimeForMap(profiles[i], mapUid);
