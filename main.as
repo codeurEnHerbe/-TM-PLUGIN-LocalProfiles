@@ -1,161 +1,110 @@
-// =======================================
-// Local Profiles Overlay (style Medals++)
-// PB finish + PB checkpoints + color overlay
-// =======================================
-
-const string kDataFileName = "two_player_local_records.json";
 array<string> profiles = {};
 int currentProfileIndex = 0;
-UI::Font@ font = null;
-string loadedFontFace = "";
-int loadedFontSize = 14;
-int fontSize = 14;
 
 Json::Value@ dataRoot = Json::Object();
-vec2 anchor = vec2(1600, 100);
 bool showCPOverlay = true;
 bool windowVisible = true;
 
 float lastRenderTime = 0.0;
 float cpOverlayTimer = 0.0;
 string cpOverlayText = "";
-vec4 cpOverlayColor = vec4(1, 1, 1, 1); // par défaut blanc
+vec4 cpOverlayColor = vec4(1, 1, 1, 1);
 string newProfileName = "";
 
-
-// -----------------------------
-// Helpers : chargement / sauvegarde
-// -----------------------------
 string DataFilePath() {
-    return IO::FromUserGameFolder(kDataFileName);
+    return IO::FromStorageFolder("player_times.json");
 }
 
-void LoadData() {
-    string path = DataFilePath();
-    if (!IO::FileExists(path)) {
-        trace("[LocalProfiles] No save file detected creating one");
-        @dataRoot = Json::Object();
-        dataRoot["overlay_x"] = anchor.x;
-        dataRoot["overlay_y"] = anchor.y;
-        SaveData();
-        return;
-    }
-    @dataRoot = Json::FromFile(path);
-    if (dataRoot is null) @dataRoot = Json::Object();
-    if (dataRoot.HasKey("overlay_x")) anchor.x = dataRoot["overlay_x"];
-    if (dataRoot.HasKey("overlay_y")) anchor.y = dataRoot["overlay_y"];
+class ProfileManager {
+    void Load() {
+        string path = DataFilePath();
+        if (!IO::FileExists(path)) {
+            @dataRoot = Json::Object();
+            Save();
+            return;
+        }
+        @dataRoot = Json::FromFile(path);
+        if (dataRoot is null) @dataRoot = Json::Object();
 
-    if (dataRoot.HasKey("profiles")) {
-        profiles.RemoveRange(0, profiles.Length);
-        Json::Value@ arr = dataRoot["profiles"];
-        for (uint i = 0; i < arr.Length; i++) {
-            profiles.InsertLast(string(arr[i]));
+        if (dataRoot.HasKey("profiles")) {
+            profiles.RemoveRange(0, profiles.Length);
+            Json::Value@ arr = dataRoot["profiles"];
+            for (uint i = 0; i < arr.Length; i++) {
+                profiles.InsertLast(string(arr[i]));
+            }
         }
     }
-}
 
-void SaveData() {
-    string path = DataFilePath();
-    string folder = Path::GetDirectoryName(path);
-    if (!IO::FolderExists(folder)) IO::CreateFolder(folder, true);
+    void Save() {
+        string path = DataFilePath();
 
-    dataRoot["overlay_x"] = anchor.x;
-    dataRoot["overlay_y"] = anchor.y;
+        dataRoot["profiles"] = Json::Array();
+        for (uint i = 0; i < profiles.Length; i++) {
+            dataRoot["profiles"].Add(Json::Value(profiles[i]));
+        }
 
-    dataRoot["profiles"] = Json::Array();
-    for (uint i = 0; i < profiles.Length; i++) {
-        dataRoot["profiles"].Add(Json::Value(profiles[i]));
+        IO::File f(path, IO::FileMode::Write);
+        f.Write(Json::Write(dataRoot));
+        f.Close();
     }
 
-    IO::File f(path, IO::FileMode::Write);
-    f.Write(Json::Write(dataRoot));
-    f.Close();
-}
-
-
-// -----------------------------
-// JSON helpers
-// -----------------------------
-Json::Value@ EnsureMapObject(const string &in profile, const string &in mapUid) {
-    if (!dataRoot.HasKey(profile)) {
-        dataRoot[profile] = Json::Object();
+    Json::Value@ EnsureMapObject(const string &in profile, const string &in mapUid) {
+        if (!dataRoot.HasKey(profile)) {
+            dataRoot[profile] = Json::Object();
+        }
+        Json::Value@ prof = dataRoot[profile];
+        if (!prof.HasKey(mapUid)) {
+            prof[mapUid] = Json::Object();
+        }
+        return prof[mapUid];
     }
-    Json::Value@ prof = dataRoot[profile];
-    if (!prof.HasKey(mapUid)) {
-        prof[mapUid] = Json::Object();
+
+    uint GetBestTimeForMap(const string &in profile, const string &in mapUid) {
+        if (!dataRoot.HasKey(profile)) return 0;
+        if (!dataRoot[profile].HasKey(mapUid)) return 0;
+        Json::Value@ mapObj = dataRoot[profile][mapUid];
+        if (mapObj is null) return 0;
+        if (mapObj.HasKey("finish")) return uint(mapObj["finish"]);
+        return 0;
     }
-    return prof[mapUid];
-}
 
-uint GetBestTimeForMap(const string &in profile, const string &in mapUid) {
-    if (!dataRoot.HasKey(profile)) return 0;
-    if (!dataRoot[profile].HasKey(mapUid)) return 0;
-    Json::Value@ mapObj = dataRoot[profile][mapUid];
-    if (mapObj is null) return 0;
-    if (mapObj.HasKey("finish")) return uint(mapObj["finish"]);
-    return 0;
-}
-
-uint GetCheckpointPB(const string &in profile, const string &in mapUid, uint idx) {
-    if (!dataRoot.HasKey(profile)) return 0;
-    Json::Value@ prof = dataRoot[profile];
-    if (prof is null) return 0;
-    if (!prof.HasKey(mapUid)) return 0;
-    Json::Value@ mapObj = prof[mapUid];
-    if (mapObj is null) return 0;
-    if (!mapObj.HasKey("checkpoints")) return 0;
-    Json::Value@ cps = mapObj["checkpoints"];
-    string key = "" + idx;
-    if (!cps.HasKey(key)) return 0;
-    return uint(cps[key]);
-}
-
-void UpdateCheckpointPB(const string &in profile, const string &in mapUid, uint idx, uint timeMs) {
-    Json::Value@ mapObj = EnsureMapObject(profile, mapUid);
-    if (!mapObj.HasKey("checkpoints")) {
-        mapObj["checkpoints"] = Json::Object();
+    uint GetCheckpointPB(const string &in profile, const string &in mapUid, uint idx) {
+        if (!dataRoot.HasKey(profile)) return 0;
+        Json::Value@ prof = dataRoot[profile];
+        if (prof is null) return 0;
+        if (!prof.HasKey(mapUid)) return 0;
+        Json::Value@ mapObj = prof[mapUid];
+        if (mapObj is null) return 0;
+        if (!mapObj.HasKey("checkpoints")) return 0;
+        Json::Value@ cps = mapObj["checkpoints"];
+        string key = "" + idx;
+        if (!cps.HasKey(key)) return 0;
+        return uint(cps[key]);
     }
-    Json::Value@ cpsObj = mapObj["checkpoints"];
-    string key = "" + idx;
-    uint prev = 0;
-    if (cpsObj.HasKey(key)) prev = uint(cpsObj[key]);
-    if (prev == 0 || timeMs < prev) {
-        cpsObj[key] = Json::Value(int(timeMs));
-        SaveData();
+
+    void UpdateCheckpointPB(const string &in profile, const string &in mapUid, uint idx, uint timeMs) {
+        Json::Value@ mapObj = EnsureMapObject(profile, mapUid);
+        if (!mapObj.HasKey("checkpoints")) {
+            mapObj["checkpoints"] = Json::Object();
+        }
+        Json::Value@ cpsObj = mapObj["checkpoints"];
+        string key = "" + idx;
+        uint prev = 0;
+        if (cpsObj.HasKey(key)) prev = uint(cpsObj[key]);
+        if (prev == 0 || timeMs < prev) {
+            cpsObj[key] = Json::Value(int(timeMs));
+        }
     }
-}
 
-void SetBestTimeForMap(const string &in profile, const string &in mapUid, uint finishTime, const Json::Value@ cpsJson) {
-    if (!dataRoot.HasKey(profile)) dataRoot[profile] = Json::Object();
-    Json::Value@ prof = dataRoot[profile];
-    Json::Value@ mapObj = Json::Object();
-    mapObj["finish"] = Json::Value(int(finishTime));
-    mapObj["checkpoints"] = cpsJson;
-    prof[mapUid] = mapObj;
-    SaveData();
-}
-
-
-// -----------------------------
-// Utils
-// -----------------------------
-string FormatTime(uint t) {
-    int m = t / 60000;
-    int s = (t % 60000) / 1000;
-    int ms = t % 1000;
-
-    string str = "";
-    if (m < 10) str += "0";
-    str += "" + m + ":";
-
-    if (s < 10) str += "0";
-    str += "" + s + ".";
-
-    if (ms < 10) str += "00";
-    else if (ms < 100) str += "0";
-    str += "" + ms;
-
-    return str;
+    void SetBestTimeForMap(const string &in profile, const string &in mapUid, uint finishTime, const Json::Value@ cpsJson) {
+        if (!dataRoot.HasKey(profile)) dataRoot[profile] = Json::Object();
+        Json::Value@ prof = dataRoot[profile];
+        Json::Value@ mapObj = Json::Object();
+        mapObj["finish"] = Json::Value(int(finishTime));
+        mapObj["checkpoints"] = cpsJson;
+        prof[mapUid] = mapObj;
+        Save();
+    }
 }
 
 string GetCurrentMapUid() {
@@ -164,10 +113,6 @@ string GetCurrentMapUid() {
     return app.RootMap.MapInfo.MapUid;
 }
 
-
-// -----------------------------
-// FINISH HANDLER
-// -----------------------------
 class FinishHandler {
     uint NOT_STARTED = 4294967295;
     bool raceStarted = false;
@@ -176,7 +121,19 @@ class FinishHandler {
     int lastState = -1;
     int cpIdx = 0;
 
+    ProfileManager pm;
+
+    FinishHandler(ProfileManager@ pmanager) {
+        pm = pmanager;
+    }
+
     void Update(float dt) {
+        if (profiles.Length == 0) return;
+        if (currentProfileIndex < 0 || currentProfileIndex >= int(profiles.Length)) return;
+
+        string profile = profiles[currentProfileIndex];
+        if (profile == "") return;
+
         auto app = GetApp();
         if (app is null || app.CurrentPlayground is null) return;
         if (app.CurrentPlayground.UIConfigs.Length == 0) return;
@@ -200,7 +157,6 @@ class FinishHandler {
 
         uint raceStartVal = cars[0].AsyncState.RaceStartTime;
 
-        // Début de course
         if (raceStartVal != NOT_STARTED && !raceStarted) {
             raceStarted = true;
             startGameTime = gameTime;
@@ -209,9 +165,8 @@ class FinishHandler {
             cpOverlayTimer = 0;
         }
 
-        // Reset si retour menu ou avant la course
         if (raceStartVal == NOT_STARTED) {
-            raceStarted = false;
+            raceStarted  = false;
             startGameTime = -1;
             lastCheckpointIndex = -1;
             cpIdx = 0;
@@ -223,39 +178,39 @@ class FinishHandler {
         if (raceStarted && mapCpIdx != lastCheckpointIndex && mapCpIdx >= 0) {
             lastCheckpointIndex = mapCpIdx;
 
-            if (cpIdx == 0) {
-
-            } else {
+            if (cpIdx != 0) {
                 int elapsed = (gameTime >= 0 && startGameTime >= 0) ? (gameTime - startGameTime) : -1;
+
                 if (elapsed >= 0) {
-                    string profile = profiles[currentProfileIndex];
                     string mapUid = GetCurrentMapUid();
 
-                    uint pbSplit = GetCheckpointPB(profile, mapUid, uint(cpIdx - 1));
+                    uint pbSplit = pm.GetCheckpointPB(profile, mapUid, uint(cpIdx - 1));
+
                     if (pbSplit > 0) {
                         int diff = int(elapsed) - int(pbSplit);
                         string sign = diff > 0 ? "+" : "-";
-                        cpOverlayText = sign + FormatTime(uint(Math::Abs(diff)));
-                        cpOverlayColor = diff < 0 ? vec4(0,0,1,1) : vec4(1,0,0,1);
-
+                        cpOverlayText = sign + Time::Format(Math::Abs(diff));
+                        cpOverlayColor = (diff < 0) ? vec4(0,0,1,1) : vec4(1,0,0,1);
                         cpOverlayTimer = 3.0;
                     } else {
-                        cpOverlayText = FormatTime(uint(elapsed));
+                        cpOverlayText = Time::Format(elapsed);
                         cpOverlayColor = vec4(1,1,1,1);
                     }
                 }
             }
-            cpIdx = cpIdx + 1;
+            cpIdx++;
         }
 
-        // Fin de course : récupération et mise à jour des PB
         if (state != lastState && state == SGamePlaygroundUIConfig::EUISequence::Finish) {
             auto rules = cast<CSmArenaRulesMode>(app.PlaygroundScript);
             if (rules is null) { lastState = state; return; }
+
             auto termFinish = app.CurrentPlayground.GameTerminals[0];
             if (termFinish is null || termFinish.GUIPlayer is null) { lastState = state; return; }
+
             CSmPlayer@ smp = cast<CSmPlayer>(termFinish.GUIPlayer);
             if (smp is null || smp.ScriptAPI is null) { lastState = state; return; }
+
             CSmScriptPlayer@ scr = cast<CSmScriptPlayer>(smp.ScriptAPI);
             if (scr is null) { lastState = state; return; }
 
@@ -263,24 +218,28 @@ class FinishHandler {
             if (ghost is null || ghost.Result is null) { lastState = state; return; }
 
             Json::Value@ cpsJson = Json::Object();
-            for (uint i = 0; i < ghost.Result.Checkpoints.get_Length(); i++) {
-                cpsJson["" + i] = Json::Value(int(ghost.Result.Checkpoints.opIndex(i)));
+            for (uint i = 0; i < ghost.Result.Checkpoints.Length; i++) {
+                cpsJson[""+i] = Json::Value(int(ghost.Result.Checkpoints[i]));
             }
 
             string mapUid = GetCurrentMapUid();
-            string profile = profiles[currentProfileIndex];
-            if (mapUid != "" && profile != "") {
-                for (uint i = 0; i < ghost.Result.Checkpoints.get_Length(); i++) {
-                    UpdateCheckpointPB(profile, mapUid, i, ghost.Result.Checkpoints.opIndex(i));
+
+            if (mapUid != "") {
+                for (uint i = 0; i < ghost.Result.Checkpoints.Length; i++) {
+                    pm.UpdateCheckpointPB(profile, mapUid, i, ghost.Result.Checkpoints[i]);
                 }
 
+                pm.Save();
+
                 uint finishTime = ghost.Result.Time;
-                uint best = GetBestTimeForMap(profile, mapUid);
+                uint best = pm.GetBestTimeForMap(profile, mapUid);
+
                 if (best == 0 || finishTime < best) {
-                    SetBestTimeForMap(profile, mapUid, finishTime, cpsJson);
-                    UI::ShowNotification("LocalProfiles", "🏁 Nouveau record pour " + profile + " : " + FormatTime(finishTime));
+                    pm.SetBestTimeForMap(profile, mapUid, finishTime, cpsJson);
+                    UI::ShowNotification("LocalProfiles", "🏁 We PB for " + profile + " : " + Time::Format(finishTime));
                 }
             }
+
             rules.DataFileMgr.Ghost_Release(ghost.Id);
         }
 
@@ -288,25 +247,9 @@ class FinishHandler {
     }
 }
 
-
-
-// -----------------------------
-// UI Overlay
-// -----------------------------
-void LoadFont() {
-    string fontFace = "DroidSans.ttf";
-    if (fontFace != loadedFontFace || fontSize != loadedFontSize) {
-        @font = UI::LoadFont(fontFace, fontSize);
-        if (font !is null) {
-            loadedFontFace = fontFace;
-            loadedFontSize = fontSize;
-        }
-    }
-}
-
 void RenderCPOverlay() {
     if (cpOverlayTimer > 0.0) {
-        cpOverlayTimer -= 1.0 / 88.0;  // On suppose un update à 60 FPS, décrémente de ~0.0167s par frame
+        cpOverlayTimer -= 1.0 / 88.0;
 
         vec2 screenSize = vec2(Draw::GetWidth(), Draw::GetHeight());
         vec2 pos = vec2((screenSize.x / 2.0) - 8,  (screenSize.y / 3.034));
@@ -326,74 +269,46 @@ void RenderCPOverlay() {
         nvg::Fill();
 
         nvg::FontSize(28);
-        nvg::FillColor(vec4(1,1,1,1));  // alpha = 1, opaque
+        nvg::FillColor(vec4(1,1,1,1)); 
         nvg::Text(pos, cpOverlayText);
 
         nvg::Restore();
     }
 }
 
+void RenderProfilesTable(const string &in mapUid) {
+    if (!UI::BeginTable("ProfilesTable", 3, UI::TableFlags::SizingFixedFit)) return;
+    UI::TableNextRow();
+    UI::TableNextColumn(); UI::Text("Profile");
+    UI::TableNextColumn(); UI::Text("Finish");
+    UI::TableNextColumn(); UI::Text("Del");
 
+    ProfileManager pm;
 
-
-
-void Render() {
-    auto app = cast<CTrackMania>(GetApp());
-    if (app is null || app.RootMap is null || app.Editor !is null) return;
-
-    string mapUid = GetCurrentMapUid();
-    if (mapUid == "") return;
-
-    if (UI::IsKeyPressed(UI::Key::S)) {
-        if (profiles.Length > 0) {
-            currentProfileIndex = (currentProfileIndex + 1) % profiles.Length;
-            SaveData();
+    for (uint i = 0; i < profiles.Length; i++) {
+        UI::TableNextRow();
+        UI::TableNextColumn();
+        string label = (int(i) == currentProfileIndex ? "\\$8f8" : "") + profiles[i];
+        if (UI::Selectable(label, int(i) == currentProfileIndex)) {
+            currentProfileIndex = int(i);
+            pm.Save();
+        }
+        UI::TableNextColumn();
+        uint best = pm.GetBestTimeForMap(profiles[i], mapUid);
+        UI::Text(best == 0 ? "-" : Time::Format(best));
+        UI::TableNextColumn();
+        if (UI::Button("×##del" + i)) {
+            profiles.RemoveAt(i);
+            if (currentProfileIndex >= int(profiles.Length))
+                currentProfileIndex = Math::Max(0, profiles.Length - 1);
+            pm.Save();
+            break;
         }
     }
+    UI::EndTable();
+}
 
-    UI::SetNextWindowPos(int(anchor.x), int(anchor.y), UI::Cond::FirstUseEver);
-    int flags = UI::WindowFlags::NoTitleBar | UI::WindowFlags::NoCollapse | UI::WindowFlags::AlwaysAutoResize;
-    UI::PushStyleColor(UI::Col::WindowBg, vec4(26/255.0, 27/255.0, 26/255.0, 1));
-
-    if (UI::Begin("LocalProfiles++", flags)) {
-        anchor = UI::GetWindowPos();
-        LoadFont();
-        UI::PushFont(font);
-        UI::Text("\\$fffLocal Profiles");
-        UI::Separator();
-        if (UI::Button(showCPOverlay ? "Hide splits" : "Show splits")) {
-            showCPOverlay = !showCPOverlay;
-        }
-        if (UI::BeginTable("ProfilesTable", 3, UI::TableFlags::SizingFixedFit)) {
-            UI::TableNextRow();
-            UI::TableNextColumn(); UI::Text("Profile");
-            UI::TableNextColumn(); UI::Text("Finish");
-            UI::TableNextColumn(); UI::Text("Del");
-            for (uint i = 0; i < profiles.Length; i++) {
-                UI::TableNextRow();
-                UI::TableNextColumn();
-                string label = (i == currentProfileIndex ? "\\$8f8" : "") + profiles[i];
-                if (UI::Selectable(label, i == currentProfileIndex)) {
-                    currentProfileIndex = i;
-                    SaveData();
-                }
-                UI::TableNextColumn();
-                uint best = GetBestTimeForMap(profiles[i], mapUid);
-                UI::Text(best == 0 ? "-" : FormatTime(best));
-                UI::TableNextColumn();
-                if (UI::Button("×##del" + i)) {
-                    profiles.RemoveAt(i);
-                    if (currentProfileIndex >= int(profiles.Length))
-                        currentProfileIndex = Math::Max(0, profiles.Length - 1);
-                    SaveData();
-                    break;
-                }
-            }
-            UI::EndTable();
-        }
-        UI::PopFont();
-    }
-    // --- Nouvelle section : ajout de profil ---
+void RenderAddProfileSection() {
     UI::Separator();
     UI::Text("Add new profile:");
 
@@ -403,28 +318,57 @@ void Render() {
 
     if (UI::Button("Add")) {
         string trimmed = newProfileName.Trim();
-        trace(trimmed);
-
         if (trimmed.Length > 0) {
-
             profiles.InsertLast(trimmed);
-            newProfileName = ""; 
-            SaveData();
+            newProfileName = "";
+            ProfileManager pm;
+            pm.Save();
         }
     }
-    if (showCPOverlay) RenderCPOverlay();
-    UI::End();
+}
+
+void Render() {
+    auto app = cast<CTrackMania>(GetApp());
+    if (app is null || app.RootMap is null || app.Editor !is null) return;
+
+    string mapUid = GetCurrentMapUid();
+    if (mapUid == "") return;
+
+    if (UI::IsKeyPressed(UI::Key::B)) {
+        if (profiles.Length > 0) {
+            currentProfileIndex = (currentProfileIndex + 1) % profiles.Length;
+            ProfileManager pm;
+            pm.Save();
+        }
+    }
+
+    UI::SetNextWindowPos(1600, 100, UI::Cond::FirstUseEver);
+    int flags = UI::WindowFlags::NoTitleBar | UI::WindowFlags::NoCollapse | UI::WindowFlags::AlwaysAutoResize;
+    UI::PushStyleColor(UI::Col::WindowBg, vec4(26/255.0, 27/255.0, 26/255.0, 1));
+
+    if (UI::Begin("LocalProfiles", flags)) {
+        UI::Text("\\$fffLocal Profiles (B to switch)");
+        UI::Separator();
+        if (UI::Button(showCPOverlay ? "Hide splits" : "Show splits")) {
+            showCPOverlay = !showCPOverlay;
+        }
+
+        RenderProfilesTable(mapUid);
+        RenderAddProfileSection();
+
+        if (showCPOverlay) RenderCPOverlay();
+
+        UI::End();
+    }
     UI::PopStyleColor();
 }
 
-
-
-// -----------------------------
-// MAIN
-// -----------------------------
 void Main() {
-    LoadData();
-    FinishHandler handler;
+    ProfileManager pm;
+    pm.Load();
+
+    FinishHandler handler(pm);
+
     while (true) {
         handler.Update(0);
         yield();

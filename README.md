@@ -1,4 +1,4 @@
-# LocalProfiles++
+# LocalProfiles
 
 **LocalProfiles++** adds fully local, per-player profiles to Trackmania.  
 Each profile stores its own **PB finish time** and **checkpoint splits**, with a clean in-game overlay showing real-time deltas versus your best run.
@@ -9,21 +9,9 @@ Each profile stores its own **PB finish time** and **checkpoint splits**, with a
 
 - 🏎️ **Multiple local profiles** (e.g., you + a friend)  
 - 🕒 **PB tracking** for finish time and every checkpoint  
-- 📊 **Live split overlay**  
-  - Blue = ahead of PB  
-  - Red = behind PB  
+- 📊 **Live split overlay** 
 - 💾 All data stored locally in a JSON file  
 - 🖥️ Simple UI to switch, add, or delete profiles  
-- 🎯 Fully automatic — no setup required
-
----
-
-## 📁 Data Storage
-
-Records are saved in:
-
-Documents/Trackmania/LocalProfiles/two_player_local_records.json
-
 
 ---
 
@@ -37,7 +25,7 @@ Documents/Trackmania/LocalProfiles/two_player_local_records.json
 
 ## ⌨️ Controls
 
-- **S** → Switch active profile  
+- **B** → Switch active profile  
 - UI button → Add/delete profiles, toggle overlay
 
 ---
