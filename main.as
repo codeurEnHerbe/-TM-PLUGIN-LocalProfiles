@@ -20,7 +20,6 @@ class ProfileManager {
         string path = DataFilePath();
         if (!IO::FileExists(path)) {
             @dataRoot = Json::Object();
-            Save();
             return;
         }
         @dataRoot = Json::FromFile(path);
@@ -229,14 +228,11 @@ class FinishHandler {
                     pm.UpdateCheckpointPB(profile, mapUid, i, ghost.Result.Checkpoints[i]);
                 }
 
-                pm.Save();
-
                 uint finishTime = ghost.Result.Time;
                 uint best = pm.GetBestTimeForMap(profile, mapUid);
 
                 if (best == 0 || finishTime < best) {
                     pm.SetBestTimeForMap(profile, mapUid, finishTime, cpsJson);
-                    UI::ShowNotification("LocalProfiles", "🏁 We PB for " + profile + " : " + Time::Format(finishTime));
                 }
             }
 
@@ -300,7 +296,6 @@ void RenderProfilesTable(const string &in mapUid) {
             profiles.RemoveAt(i);
             if (currentProfileIndex >= int(profiles.Length))
                 currentProfileIndex = Math::Max(0, profiles.Length - 1);
-            pm.Save();
             break;
         }
     }
@@ -320,8 +315,6 @@ void RenderAddProfileSection() {
         if (trimmed.Length > 0) {
             profiles.InsertLast(trimmed);
             newProfileName = "";
-            ProfileManager pm;
-            pm.Save();
         }
     }
 }
